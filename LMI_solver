@@ -1,0 +1,125 @@
+clear;
+clc;
+
+% 标量
+m = 1299;
+Iz = 1627;
+Lf = 1;
+Lr = 1.454;
+Cf = 16000;
+Cr = 16000;
+Umax = 300;
+K = 0.03;
+% epsilon = 0.002;
+C_beta = 1;  %权重系数
+C_r = 1;    %权重系数
+Vx_max = 144;
+Vx_min = 90;
+
+% 时变参数（f和r相等）
+rou_f = 0.1;
+rou_r = 0.1;
+tao = [rou_f 0; 0 rou_r];
+
+P = [[1/Vx_max 1/Vx_max^2];     %左边列是q1，右侧是q2
+    [1/Vx_min 1/Vx_min^2];
+    [1/Vx_max 1/Vx_min^2];
+    [1/Vx_min 1/Vx_max^2]];
+
+A_list= cell(1,4);
+B1_list = cell(1,4);
+D1_list = cell(1,4);
+delta_A_list = cell(1,4);
+delta_B1_list = cell(1,4);
+Ea_list = cell(1,4);
+Eb_list = cell(1,4);
+a_i_list = cell(1,4);
+
+for i = 1:4
+    
+    % 生成Ai列
+    A_list{1,i} = [-(Cf+Cr)*P(i,1)/m (Cr*Lr-Cf*Lf)*P(i,2)/m-1;
+    (Cr*Lr-Cf*Lf)/Iz -(Cf*Lf^2+Cr*Lr^2)*P(i,1)/Iz];
+    % 生成B1i列
+    B1_list{1,i} = [Cf*P(i,1)/m; 
+        Cf*Lf/Iz];
+    % 生成D1i列
+    D1_list{1,i}= [0; -C_r*P(i,1)/((Lf+Lr)*K)];
+    % 扰动量
+    %生成Ea列
+    delta_A_list{1,i} = [-(Cf*rou_f+Cr*rou_r)*P(i,1)/m (Cr*rou_r*Lr-Cf*rou_f*Lf)*P(i,2)/m;
+        (Cr*rou_r*Lr-Cf*rou_f*Lf)/Iz -(Cf*rou_f*Lf^2+Cr*rou_r*Lr^2)*P(i,1)/Iz];
+    Ea_list{1,i} = tao^(-1)*delta_A_list{1,i};
+    %生成Eb列
+    delta_B1_list{1,i} = [Cf*rou_f*P(i,1)/m; 
+        Cf*rou_f*Lf/Iz];
+    Eb_list{1,i} = tao^(-1)*delta_B1_list{1,i};
+    
+end
+
+% 指定求解第几组（1，4）
+index = 1;
+
+B2 = [0; 1/Iz];
+C1 = [C_beta 0;0 C_r];
+H = eye(2);
+
+A = A_list{index};
+B1 = B1_list{index};
+D1 = D1_list{index};
+Eb = Eb_list{index};
+Ea = Ea_list{index};
+
+setlmis([]);
+
+% 定理3  
+% 待求参数
+W = lmivar(2,[1 2]);
+X = lmivar(1,[2 1]);   % 对称矩阵
+eta = lmivar(1,[1 0]);
+epsilon = lmivar(1,[1 0]);
+% gamma2 = lmivar(1,[1 0]);
+gamma2 = 0.1;
+
+% 定义结构
+lmiterm([1 1 1 X],A,1,'s');
+lmiterm([1 1 1 W],B2,1,'s');
+lmiterm([1 1 2 0],B1);
+lmiterm([1 1 3 -X],1,C1');
+lmiterm([1 1 4 eta],1,H);
+lmiterm([1 1 5 X],1,Ea');
+lmiterm([1 2 2 0],-1);
+lmiterm([1 2 3 0],D1');
+lmiterm([1 2 5 0],Eb');
+% lmiterm([1 3 3 gamma2],-1,1);
+lmiterm([1 3 3 0],-gamma2*eye(2));
+lmiterm([1 4 4 eta],-eye(2),1);
+lmiterm([1 5 5 eta],-eye(2),1);
+
+lmiterm([2 1 1 0],-Umax^2);
+lmiterm([2 1 2 W],1,1);
+lmiterm([2 2 2 X],-1/epsilon,1);
+
+lmisys=getlmis;
+
+% 可行性求解
+[tmin, xfeas] = feasp(lmisys);
+W_mat = dec2mat(lmisys, xfeas, W);
+X_mat = dec2mat(lmisys, xfeas, X);
+
+% 最小化求解
+% n=decnbr(lmisys);
+% c=zeros(n,1);
+% for j=1:n
+%      [gamma2j]=defcx(lmisys,j,gamma2);
+%      c(j)=trace(gamma2j);
+% end
+% options=[1e-5,0,0,0,0];
+% [copt,xopt]=mincx(lmisys,c,options);
+
+% gamma = dec2mat(lmisys,xopt,gamma2);
+% gam = gamma^(0.5);
+% W_mat=dec2mat(lmisys,xopt,W);
+% X_mat=dec2mat(lmisys,xopt,X);
+% 
+% Ksf = W_mat*(X_mat^-1);
